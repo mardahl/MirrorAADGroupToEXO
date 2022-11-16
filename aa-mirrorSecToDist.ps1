@@ -34,11 +34,11 @@ function Invoke-GraphRequest {
 "Office 365 Exchange Online : Exchange.ManageAsApp"
 "Azure AD RBAC role : Exchange Administrator (maybe less permissive if possible)"
 
-
+#connecting to Microsoft Graph and Exchange Online
 try
 {
-  "[INFO] Logging in to Azure with managed identity"
-  Connect-AzAccount -Identity
+    	"[INFO] Logging in to Azure with managed identity"
+    	Connect-AzAccount -Identity
 
 	"[INFO] Acquire access token for Microsoft Graph"
 	$token = (Get-AzAccessToken -ResourceUrl 'https://graph.microsoft.com').Token
@@ -50,8 +50,8 @@ try
 
 }
 catch {
-    Write-Error -Message $_.Exception
-    throw $_.Exception
+	Write-Error -Message $_.Exception
+	throw $_.Exception
 }
 
 #Get Security Groups
@@ -66,10 +66,6 @@ foreach ($SecurityGroup in $SecurityGroups)
 	$distGroupName = "$($SecurityGroup.displayName)$distGroupSuffix"
 	#Get transitive members of security group
 	$secMembers = Invoke-GraphRequest "/groups/$($SecurityGroup.id)/transitiveMembers"
-	#Remove guest accounts
-	$secMembers = $secMembers | where-object {$_.userPrincipalName -notlike "*#EXT#*"}
-	#Remove non-mail users
-	$secMembers = $secMembers | Where {$_.mail -ne $null}
 	$PSPersistPreference = $false
 	
 	#find existing distribution groups and create a new one if none are found
@@ -77,20 +73,26 @@ foreach ($SecurityGroup in $SecurityGroups)
 
 	if($distGroup){
 		"[INFO] Existing group found ($distGroupName). Mirroring members."
+		#building list of users to remove
 		$distMembers = Get-DistributionGroupMember -Identity $distGroupName
 		$toRemove = $distMembers | Where {$_.ExternalDirectoryObjectId -notin $secMembers.id}
+		#building list of users to add
 		$toAdd = $secMembers | Where {$_.id -notin $distMembers.ExternalDirectoryObjectId}  
 
 		#add members
 		if($toAdd -ne $null) {
 			foreach ($member in $toAdd){
+				#validate that the member is an actual recipient object in Exchange Online
+				$recipient = Get-Recipient -Identity $member.Id -ErrorAction SilentlyContinue | select Guid,PrimarySMTPAddress
+				if ($recipient -eq $null) {
+					continue
+				}
+				#add validated recipients
 				try {
-					$recipient = Get-Recipient -Identity $member.Id | select Guid,PrimarySMTPAddress -ErrorAction Stop
 					Add-DistributionGroupMember -Identity $distGroupName -Member $recipient.Guid -ErrorAction Stop
 					"[INFO] Added $($recipient.PrimarySMTPAddress)"
 				} catch {
-					"[WARNING] Unable to add $($member.userPrincipalName) - Might not be a mail user, so it probably doesn't matter that much."
-					$member
+					"[WARNING] Unable to add $($recipient.PrimarySMTPAddress)"
 				}
 			}
 		} else {
@@ -105,7 +107,7 @@ foreach ($SecurityGroup in $SecurityGroups)
 					Remove-DistributionGroupMember -Identity $distGroupName -Member $member.PrimarySmtpAddress -Confirm:$false
 					"[INFO] Removed $($member.PrimarySmtpAddress)"
 				} catch {
-					"[WARNING] Unable to remove $($member.PrimarySmtpAddress) - Might not be a mail user, so it doesn't matter that much."
+					"[WARNING] Unable to remove $($member.PrimarySmtpAddress)"
 				}
 			}
 		} else {
