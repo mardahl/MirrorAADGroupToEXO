@@ -1,6 +1,7 @@
 <#
     .DESCRIPTION
-        Azure automation solution that mirrors membership of multiple security groups into distribution groups
+        Azure automation solution that mirrors membership of multiple security groups into corresponding distribution groups.
+	Distributiongrouops that aren't preprovisioned will be created with the defined suffix.
 		
     .NOTES
         AUTHOR: Michael Mardahl (github.com/mardahl)
