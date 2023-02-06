@@ -21,9 +21,31 @@ function Invoke-GraphRequest {
         [Parameter(Mandatory)]
         $query
     )
-    $response = Invoke-RestMethod -Uri https://graph.microsoft.com/$graphVersion$query -Headers $graphToken -Method GET
-	return $response.value
 
+    $results = @()
+    $url = "https://graph.microsoft.com/$graphVersion$query"
+
+    while ($url) {
+        $response = Invoke-RestMethod -Uri $url -Headers $graphToken -Method GET
+        $results += $response.value
+
+        # check for next link to continue paging
+        $nextLink = ($response.'@odata.nextLink')
+        if ($nextLink) {
+            $url = $nextLink
+        }
+        else {
+            $url = $null
+        }
+
+        # handle throttling
+        if ($response.value.Count -eq 0 -and $response.statusCode -eq 429) {
+            Write-Warning "Throttled! Waiting for 1 minute..."
+            Start-Sleep -Seconds 60
+        }
+    }
+
+    return $results
 }
 #endregion functions
 
@@ -32,7 +54,7 @@ function Invoke-GraphRequest {
 "The followign permissions can be given to the managed identity using this script: https://github.com/mardahl/PSBucket/blob/master/Add-MGraphMSIPermissions.ps1"
 "Microsoft Graph : Group.Read.All"
 "Office 365 Exchange Online : Exchange.ManageAsApp"
-"Azure AD RBAC role : Exchange Administrator (maybe less permissive if possible)"
+"Azure AD RBAC role : Exchange Administrator (maybe less permissive 'Recipient Administrator' if possible)"
 
 #connecting to Microsoft Graph and Exchange Online
 try
